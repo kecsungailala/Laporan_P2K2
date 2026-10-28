@@ -202,7 +202,9 @@
           <div><label>Jam mulai</label><input type="time" id="iMulai"></div>
           <div><label>Jam selesai</label><input type="time" id="iSelesai"></div>
         </div>
-        <label>Tempat pelaksanaan</label><input id="iTempat">
+        <label>Tempat pelaksanaan</label>
+        <input id="iTempat" list="dlTempat" placeholder="cth. RUMAH KPM / RUMAH IBU KASNU / BALAI DESA">
+        <datalist id="dlTempat"><option>RUMAH KPM</option><option>BALAI DESA</option><option>POSYANDU</option><option>KANTOR DESA</option><option>MUSHOLA</option></datalist>
         <div class="row">
           <div><label>Nama pemateri</label><input id="iPemateri"></div>
           <div><label>Jabatan / instansi</label><input id="iJabatan"></div>
@@ -244,9 +246,8 @@
         <label style="display:flex;justify-content:space-between;align-items:center">Rangkuman kegiatan
           <button class="btn ghost kecil" id="bAutoR">Susun otomatis</button></label>
         <textarea id="iRangkuman"></textarea>
-        <label style="display:flex;justify-content:space-between;align-items:center">Simpulan
-          <button class="btn ghost kecil" id="bAutoS">Susun otomatis</button></label>
-        <textarea id="iSimpulan" style="min-height:90px"></textarea>
+        <label>Simpulan <span style="font-weight:400">(otomatis, mengikuti format laporan sistem — tidak diisi manual)</span></label>
+        <div id="iSimpulan" class="hint" style="margin-top:0;background:#f8fafc;border-color:#e5e7eb;color:var(--teks);text-align:left">🔒 <span id="tSimpulan"></span></div>
       </div>
 
       <button class="btn blok" id="bSimpan">Simpan laporan</button>
@@ -297,7 +298,6 @@
             <div><label>Provinsi</label><input id="sProv"></div>
           </div>
           <label>Jabatan/instansi pemateri (default)</label><input id="sInst">
-          <label>Tempat pelaksanaan (default)</label><input id="sTempat">
           <label>Kop laporan (baris 1 judul besar, baris terakhir alamat)</label><textarea id="sKop" style="min-height:96px"></textarea>
           <label>Logo kop (PNG/JPG)</label>
           <div class="row" style="align-items:center"><input type="file" id="sLogo" accept="image/png,image/jpeg">
@@ -804,7 +804,7 @@ async function salinSiks(id){
  *  FORM LAPORAN
  * ========================================================= */
 const draftKey = () => 'p2k2_draft_'+(S.user?S.user.id:'');
-const FIELDS = ['iTgl','iMulai','iSelesai','iTempat','iPemateri','iJabatan','iMateri','iRangkuman','iSimpulan'];
+const FIELDS = ['iTgl','iMulai','iSelesai','iTempat','iPemateri','iJabatan','iMateri','iRangkuman'];
 
 async function bukaForm(id){
   pindah('vForm');
@@ -822,15 +822,15 @@ async function bukaForm(id){
     $('iTgl').value=l.tanggal; $('iMulai').value=l.jamMulai; $('iSelesai').value=l.jamSelesai; $('iTempat').value=l.tempat;
     $('iPemateri').value=l.pemateri; $('iJabatan').value=l.jabatan; $('iMateri').value=l.materi;
     setModul(l.modul);
-    $('iRangkuman').value=l.rangkuman; $('iSimpulan').value=l.simpulan;
+    $('iRangkuman').value=l.rangkuman; perbaruiSimpulan();
     if(S.f.adaFoto) $('geoInfo').textContent='Foto tersimpan. Pilih foto baru hanya jika ingin mengganti.';
     if(S.f.adaScan){ $('bHapusScan').classList.remove('hide'); }
   } else {
     if(isAdmin()){ $('iPid').disabled=false; $('iPid').value=''; }
     $('iTgl').value=hariIni(); $('iMulai').value='16:00'; $('iSelesai').value='17:00';
-    $('iTempat').value=S.settings.tempatDefault||'RUMAH KPM';
+    $('iTempat').value='';
     $('iPemateri').value=isAdmin()?'':S.user.nama; $('iJabatan').value=S.settings.instansiPemateri||'';
-    $('iMateri').value=''; $('iRangkuman').value=''; $('iSimpulan').value='';
+    $('iMateri').value=''; $('iRangkuman').value='';
     setModul(S.modul[0]);
     const dr = ls.get(draftKey());
     if(dr && !isAdmin()){
@@ -841,6 +841,7 @@ async function bukaForm(id){
     } else await isiGrup('');
     $('iCap').checked = false; $('geoInfo').textContent='';
   }
+  perbaruiSimpulan();
 }
 
 function setModul(m){
@@ -1016,11 +1017,14 @@ $('bAutoR').onclick = () => {
   t += ` HASIL KEGIATAN MENUNJUKKAN PESERTA MEMAHAMI MATERI ${materi} DAN BERKOMITMEN MENERAPKANNYA DALAM KEHIDUPAN SEHARI-HARI.`;
   $('iRangkuman').value = t.toUpperCase(); simpanDraft();
 };
-$('bAutoS').onclick = () => {
-  const d = dataForm();
-  $('iSimpulan').value = `Pelaksanaan Pertemuan Peningkatan Kemampuan Keluarga (P2K2) berjalan dengan baik dan tertib. KPM mampu memahami materi yang diberikan dan menunjukkan antusiasme serta keterlibatan aktif dalam diskusi, yang menunjukkan bahwa kegiatan ini memberikan dampak pada perubahan perilaku serta peningkatan kemampuan keluarga dalam hal ${d.materi || d.modul}.`;
-  simpanDraft();
-};
+/* Simpulan dikunci: kalimat baku persis seperti laporan dari sistem, hanya materi yang menyesuaikan */
+function simpulanBaku(materi){
+  const m = String(materi||'').trim().replace(/\.$/, '') + '.';
+  return 'Pelaksanaan Pertemuan Peningkatan Kemampuan Keluarga (P2K2) berjalan dengan baik, tertib. KPM mampu memahami materi yang diberikan dan menunjukkan antusiasme dan keterlibatan aktif dalam diskusi, yang menunjukkan bahwa kegiatan ini memberikan dampak pada perubahan perilaku serta peningkatan kemampuan keluarga dalam hal ' + m + '.';
+}
+function perbaruiSimpulan(){ const d = dataForm(); $('tSimpulan').textContent = simpulanBaku(d.materi || d.modul); }
+['iMateri'].forEach(id => $(id).addEventListener('input', perbaruiSimpulan));
+$('iModul').addEventListener('change', perbaruiSimpulan);
 
 /* ---------- Draft & simpan ---------- */
 let draftT;
@@ -1043,14 +1047,14 @@ $('bSimpan').onclick = async () => {
   if(isAdmin() && !S.f.pid) return toast('Pilih pendamping.', true);
   if(!d.desa) return toast('Pilih desa–kelompok.', true);
   if(!d.tgl) return toast('Isi tanggal kegiatan.', true);
+  if(!d.tempat){ $('iTempat').focus(); return toast('Isi tempat pelaksanaan.', true); }
   if(!Object.keys(S.f.abs).length) return toast('Daftar hadir kosong.', true);
   if(!S.f.foto && !S.f.adaFoto && !confirm('Belum ada foto kegiatan. Tetap simpan?')) return;
   if(!$('iRangkuman').value.trim()) $('bAutoR').click();
-  if(!$('iSimpulan').value.trim()) $('bAutoS').click();
   const payload = {
     id:S.f.id, pendampingId:S.f.pid, desa:d.desa, kelompok:d.kel, tanggal:d.tgl, jamMulai:d.mulai, jamSelesai:d.selesai,
     tempat:d.tempat, pemateri:$('iPemateri').value, jabatan:$('iJabatan').value, modul:d.modul, materi:d.materi,
-    rangkuman:$('iRangkuman').value, simpulan:$('iSimpulan').value, lat:S.f.lat, lng:S.f.lng,
+    rangkuman:$('iRangkuman').value, lat:S.f.lat, lng:S.f.lng,
     absensi:Object.keys(S.f.abs).map(k=>({kpmId:k, status:S.f.abs[k].status, keterangan:S.f.abs[k].keterangan||''})),
     hapusScan:S.f.hapusScan
   };
@@ -1161,7 +1165,7 @@ function adminTab(t){
   if(t==='rekap') muatRekap();
   if(t==='pend') renderPend();
   if(t==='set'){ $('sKab').value=S.settings.kabupaten||''; $('sProv').value=S.settings.provinsi||''; $('sInst').value=S.settings.instansiPemateri||'';
-                 $('sTempat').value=S.settings.tempatDefault||''; $('sDasar').value=S.settings.dasar||'';
+                 $('sDasar').value=S.settings.dasar||'';
                  $('sKop').value=S.settings.kop||''; $('sCatB').value=S.settings.catatanB||'';
                  $('sLogoInfo').textContent = S.settings.adaLogo ? '✓ logo terpasang' : 'belum ada logo';
                  isiFormPromo(); }
@@ -1221,7 +1225,7 @@ function formPend(id){
 $('bPendBaru').onclick = () => formPend(null);
 
 $('bSimpanSet').onclick = async () => {
-  const s = { kabupaten:$('sKab').value, provinsi:$('sProv').value, instansiPemateri:$('sInst').value, tempatDefault:$('sTempat').value,
+  const s = { kabupaten:$('sKab').value, provinsi:$('sProv').value, instansiPemateri:$('sInst').value,
               dasar:$('sDasar').value, kop:$('sKop').value, catatanB:$('sCatB').value };
   try{ await jalan('Menyimpan…', () => call('saveSettings', s)); Object.assign(S.settings, s); toast('Pengaturan tersimpan.'); }catch(e){}
 };
