@@ -494,7 +494,8 @@ async function mulai(){
   }
   $('iModul').innerHTML = S.modul.map(m => `<option>${esc(m)}</option>`).join('') + '<option value="__lain">Lainnya…</option>';
   $('fBulan').value = bulanIni(); $('rBulan').value = bulanIni();
-  $('akunInfo').innerHTML = `<b>${esc(S.user.nama)}</b><br><span class="muted">Username: ${esc(S.user.username)}${S.user.nip?' · NIP '+esc(S.user.nip):''}<br>${S.user.kecamatan?'Kecamatan '+esc(S.user.kecamatan):''}</span>`;
+  S.versiServer = r.versi || 'lama (belum diperbarui)';
+  $('akunInfo').innerHTML = `<div class="muted" style="float:right;font-size:11px">Server: ${esc(S.versiServer)}</div><b>${esc(S.user.nama)}</b><br><span class="muted">Username: ${esc(S.user.username)}${S.user.nip?' · NIP '+esc(S.user.nip):''}<br>${S.user.kecamatan?'Kecamatan '+esc(S.user.kecamatan):''}</span>`;
   pindah('vLaporan');
   terakhirAktif = Date.now();
   siapkanPromo(r.promo);
@@ -1007,19 +1008,31 @@ function dataForm(){
   return { desa, kel, tgl:$('iTgl').value, mulai:$('iMulai').value, selesai:$('iSelesai').value,
     tempat:$('iTempat').value.trim(), modul:$('iModul').value, materi:$('iMateri').value.trim() };
 }
+/* Huruf besar di awal kata (KELAWAT → Kelawat), singkatan umum tetap kapital */
+const SINGKATAN = ['KPM','PKH','P2K2','RT','RW','PAUD','TK','SD','SMP','SMA','UPT','BPD','PKK','KUA','RSUD'];
+function judulKata(s){
+  return String(s||'').toLowerCase().replace(/[^\s]+/g, w => {
+    const u = w.toUpperCase().replace(/[^A-Z0-9]/g,'');
+    if(SINGKATAN.includes(u)) return w.toUpperCase();
+    return w.charAt(0).toUpperCase() + w.slice(1);
+  });
+}
 $('bAutoR').onclick = () => {
   const d = dataForm(), h = hitung();
   if(!d.desa) return toast('Pilih desa–kelompok dulu.', true);
   const materi = d.materi || d.modul;
-  let t = `KEGIATAN P2K2 KELOMPOK PKH DESA ${d.desa} KELOMPOK ${d.kel}. DILAKSANAKAN PADA TANGGAL ${tglIndo(d.tgl)} PADA PUKUL ${d.mulai}-${d.selesai} WIB BERTEMPAT DI ${d.tempat} DIIKUTI OLEH ${h.Hadir} KPM. MATERI YANG DISAMPAIKAN ADALAH ${materi}. DALAM KEGIATAN INI PESERTA BERPARTISIPASI AKTIF MELALUI PENYAMPAIAN MATERI, DISKUSI, DAN TANYA JAWAB.`;
+  const kel = /^kelompok\b/i.test(d.kel) ? judulKata(d.kel) : 'Kelompok ' + judulKata(d.kel);
+  const jam = (d.mulai||'').replace(':','.') + '–' + (d.selesai||'').replace(':','.');
+  let t = `Kegiatan P2K2 kelompok PKH Desa ${judulKata(d.desa)} ${kel} dilaksanakan pada tanggal ${tglIndo(d.tgl)} pukul ${jam} WIB bertempat di ${judulKata(d.tempat)} dan diikuti oleh ${h.Hadir} KPM. Materi yang disampaikan adalah ${materi}. Dalam kegiatan ini peserta berpartisipasi aktif melalui penyampaian materi, diskusi, dan tanya jawab.`;
   const tdk = h.Sakit+h.Izin+h.Alpa;
-  if(tdk) t += ` SEBANYAK ${tdk} KPM TIDAK HADIR (SAKIT ${h.Sakit}, IZIN ${h.Izin}, ALPA ${h.Alpa}).`;
-  t += ` HASIL KEGIATAN MENUNJUKKAN PESERTA MEMAHAMI MATERI ${materi} DAN BERKOMITMEN MENERAPKANNYA DALAM KEHIDUPAN SEHARI-HARI.`;
-  $('iRangkuman').value = t.toUpperCase(); simpanDraft();
+  if(tdk) t += ` Sebanyak ${tdk} KPM tidak hadir (sakit ${h.Sakit}, izin ${h.Izin}, alpa ${h.Alpa}).`;
+  t += ` Hasil kegiatan menunjukkan peserta memahami materi ${materi} dan berkomitmen menerapkannya dalam kehidupan sehari-hari.`;
+  $('iRangkuman').value = t; simpanDraft();
 };
+
 /* Simpulan dikunci: kalimat baku persis seperti laporan dari sistem, hanya materi yang menyesuaikan */
 function simpulanBaku(materi){
-  const m = String(materi||'').trim().replace(/\.$/, '') + '.';
+  const m = String(materi||'').trim().replace(/[.\s]+$/, '');
   return 'Pelaksanaan Pertemuan Peningkatan Kemampuan Keluarga (P2K2) berjalan dengan baik, tertib. KPM mampu memahami materi yang diberikan dan menunjukkan antusiasme dan keterlibatan aktif dalam diskusi, yang menunjukkan bahwa kegiatan ini memberikan dampak pada perubahan perilaku serta peningkatan kemampuan keluarga dalam hal ' + m + '.';
 }
 function perbaruiSimpulan(){ const d = dataForm(); $('tSimpulan').textContent = simpulanBaku(d.materi || d.modul); }
@@ -1048,6 +1061,7 @@ $('bSimpan').onclick = async () => {
   if(!d.desa) return toast('Pilih desa–kelompok.', true);
   if(!d.tgl) return toast('Isi tanggal kegiatan.', true);
   if(!d.tempat){ $('iTempat').focus(); return toast('Isi tempat pelaksanaan.', true); }
+  if(d.mulai && d.selesai && d.selesai <= d.mulai){ $('iSelesai').focus(); return toast('Jam selesai harus setelah jam mulai.', true); }
   if(!Object.keys(S.f.abs).length) return toast('Daftar hadir kosong.', true);
   if(!S.f.foto && !S.f.adaFoto && !confirm('Belum ada foto kegiatan. Tetap simpan?')) return;
   if(!$('iRangkuman').value.trim()) $('bAutoR').click();
