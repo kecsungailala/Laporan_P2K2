@@ -191,10 +191,26 @@
     <section id="vForm" class="hide">
       <div class="card">
         <h2 id="fJudul">Laporan P2K2 Baru</h2>
+        <div id="jenisTabs" class="tabs hide">
+          <button type="button" data-jl="" class="on">Laporan P2K2</button>
+          <button type="button" data-jl="supervisi">Supervisi</button>
+        </div>
         <div id="fPidWrap" class="hide"><label>Pendamping</label><select id="iPid"></select></div>
+        <div id="supBox" class="hide">
+          <label>Laporan pendamping yang disupervisi</label>
+          <select id="iSumber"></select>
+          <div class="muted" id="sumberInfo" style="margin-top:4px">Pilih laporan pendamping → data kegiatan, daftar hadir, rangkuman &amp; foto terisi otomatis. Atau isi manual.</div>
+        </div>
         <label>Desa – Kelompok</label>
         <select id="iGrup"></select>
-        <div id="hintKpm" class="hint hide">Belum ada data KPM. Tambahkan dulu di menu <b>KPM</b> (bisa tempel langsung dari Excel).</div>
+        <div id="hintKpm" class="hint hide">Belum ada data KPM. Tambahkan dulu di menu <b>KPM</b> (bisa tempel langsung dari Excel), atau pilih <b>Kelompok lainnya</b>.</div>
+        <div id="lainBox" class="hide">
+          <div class="row">
+            <div><label>Desa</label><input id="iDesaL" placeholder="cth. REDANG"></div>
+            <div><label>Nama kelompok</label><input id="iKelL" placeholder="cth. MAWAR / KELOMPOK 2"></div>
+          </div>
+        </div>
+        <div id="kecBox" class="hide"><label>Kecamatan tempat kegiatan</label><input id="iKec" placeholder="cth. Rengat Barat"></div>
         <div class="row">
           <div><label>Tanggal kegiatan</label><input type="date" id="iTgl"></div>
         </div>
@@ -213,7 +229,18 @@
         <label>Materi / sesi</label><input id="iMateri" placeholder="cth. Kesehatan dan gizi / Jamban sehat">
       </div>
 
-      <div class="card">
+      <div class="card" id="jmlCard">
+        <h2>Jumlah peserta kelompok</h2>
+        <div class="row">
+          <div><label>Hadir</label><input type="number" min="0" inputmode="numeric" id="iJH"></div>
+          <div><label>Sakit</label><input type="number" min="0" inputmode="numeric" id="iJS"></div>
+          <div><label>Izin</label><input type="number" min="0" inputmode="numeric" id="iJI"></div>
+          <div><label>Alpa</label><input type="number" min="0" inputmode="numeric" id="iJA"></div>
+        </div>
+        <div class="hint">Lampiran <b>Daftar Absensi KPM Peserta P2K2</b> diambil dari unggahan <b>Daftar hadir bertanda tangan</b> (foto/JPG atau PDF) di bawah.</div>
+      </div>
+
+      <div class="card" id="absCard">
         <h2>Daftar hadir KPM</h2>
         <div class="hit" id="hit"></div>
         <div class="row" style="margin:6px 0">
@@ -246,6 +273,11 @@
         <label style="display:flex;justify-content:space-between;align-items:center">Rangkuman kegiatan
           <button class="btn ghost kecil" id="bAutoR">Susun otomatis</button></label>
         <textarea id="iRangkuman"></textarea>
+        <div id="temuanBox" class="hide">
+          <label style="display:flex;justify-content:space-between;align-items:center">Temuan lapangan dan tindak lanjut
+            <button class="btn ghost kecil" id="bAutoT">Susun otomatis</button></label>
+          <textarea id="iTemuan" placeholder="Kendala/permasalahan yang ditemukan saat supervisi, lalu langkah tindak lanjutnya."></textarea>
+        </div>
         <label>Simpulan <span style="font-weight:400">(otomatis, mengikuti format laporan sistem — tidak diisi manual)</span></label>
         <div id="iSimpulan" class="hint" style="margin-top:0;background:#f8fafc;border-color:#e5e7eb;color:var(--teks);text-align:left">🔒 <span id="tSimpulan"></span></div>
       </div>
@@ -381,7 +413,7 @@
 
   <nav>
     <button data-v="vLaporan" class="on"><b>📋</b>Laporan</button>
-    <button data-v="vForm"><b>➕</b>Buat</button>
+    <button data-v="vForm" id="navBuat"><b>➕</b>Buat</button>
     <button data-v="vKpm"><b>👥</b>KPM</button>
     <button data-v="vAdmin" id="navAdmin" class="hide"><b>📊</b>Admin</button>
     <button data-v="vAkun"><b>👤</b>Akun</button>
@@ -410,6 +442,11 @@ const S = { token:null, user:null, settings:{}, modul:[], kpm:[], pendamping:[],
 const $ = id => document.getElementById(id);
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const isAdmin = () => S.user && S.user.role === 'admin';
+const isKatim = () => S.user && S.user.role === 'katim';
+const isPenyelia = () => isAdmin() || isKatim();
+const LAIN = '__lainnya';
+const pendOpsi = () => S.pendamping.filter(p => p.role !== 'katim' && (isAdmin() || p.aktif !== 'N'))
+  .map(p => `<option value="${esc(p.id)}">${esc(p.nama)} — ${esc(p.kecamatan)}</option>`).join('');
 const ls = {
   get(k){ try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; } },
   set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); return true; }catch(e){ return false; } },
@@ -420,7 +457,7 @@ function hariIni(){ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezon
 function bulanIni(){ return hariIni().slice(0,7); }
 
 let toastT;
-function toast(msg, err){ const t=$('toast'); t.textContent=msg; t.className=err?'err':''; clearTimeout(toastT); toastT=setTimeout(()=>t.className='hide', err?5000:2600); }
+function toast(msg, err){ const t=$('toast'); t.textContent=msg; t.className=err?'err':''; clearTimeout(toastT); toastT=setTimeout(()=>t.className='hide', Math.max(err?5000:2600, String(msg).length*55)); }
 function loading(on, txt){ $('loading').classList.toggle('hide', !on); $('loadingTxt').textContent = txt||'Memuat…'; }
 
 /* Alamat API Apps Script (URL /exec). Wajib diisi kalau halaman dipasang di GitHub Pages / Vercel.
@@ -483,22 +520,25 @@ async function mulai(){
   Object.assign(S, { user:r.user, settings:r.settings, modul:r.modul, kpm:r.kpm, pendamping:r.pendamping, kpmBy:{} });
   if(!isAdmin()) S.kpmBy[S.user.id] = S.kpm;
   $('login').classList.add('hide'); $('app').classList.remove('hide');
-  $('hUser').textContent = S.user.nama + (S.user.kecamatan ? ' · Kec. '+S.user.kecamatan : '') + (isAdmin()?' · Admin':'');
+  $('hUser').textContent = S.user.nama + (S.user.kecamatan ? ' · Kec. '+S.user.kecamatan : '') + (isAdmin()?' · Admin':'') + (isKatim()?' · Katim Kabupaten':'');
   $('navAdmin').classList.toggle('hide', !isAdmin());
-  ['fPendWrap','fPidWrap','kPidWrap'].forEach(id => $(id).classList.toggle('hide', !isAdmin()));
-  if(isAdmin()){
-    const opt = S.pendamping.map(p => `<option value="${esc(p.id)}">${esc(p.nama)} — ${esc(p.kecamatan)}</option>`).join('');
-    $('fPend').innerHTML = '<option value="">Semua pendamping</option>' + opt;
-    $('iPid').innerHTML = '<option value="">— pilih pendamping —</option>' + opt;
-    $('kPid').innerHTML = '<option value="">— pilih pendamping —</option>' + opt;
-  }
+  $('fPendWrap').classList.toggle('hide', !isPenyelia());
+  $('kPidWrap').classList.toggle('hide', !isAdmin());
+  if(isPenyelia()) isiOpsiPendamping();
   $('iModul').innerHTML = S.modul.map(m => `<option>${esc(m)}</option>`).join('') + '<option value="__lain">Lainnya…</option>';
   $('fBulan').value = bulanIni(); $('rBulan').value = bulanIni();
   S.versiServer = r.versi || 'lama (belum diperbarui)';
-  $('akunInfo').innerHTML = `<div class="muted" style="float:right;font-size:11px">Server: ${esc(S.versiServer)}</div><b>${esc(S.user.nama)}</b><br><span class="muted">Username: ${esc(S.user.username)}${S.user.nip?' · NIP '+esc(S.user.nip):''}<br>${S.user.kecamatan?'Kecamatan '+esc(S.user.kecamatan):''}</span>`;
+  $('akunInfo').innerHTML = `<div class="muted" style="float:right;font-size:11px">Server: ${esc(S.versiServer)}</div><b>${esc(S.user.nama)}</b><br><span class="muted">Username: ${esc(S.user.username)}${S.user.nip?' · NIP '+esc(S.user.nip):''}<br>${isKatim()?'Ketua Tim (Katim) Kabupaten':(S.user.kecamatan?'Kecamatan '+esc(S.user.kecamatan):'')}</span>`;
   pindah('vLaporan');
   terakhirAktif = Date.now();
   siapkanPromo(r.promo);
+}
+
+function isiOpsiPendamping(){
+  const opt = pendOpsi();
+  $('fPend').innerHTML = '<option value="">Semua</option>' + (isKatim() ? `<option value="${esc(S.user.id)}">Laporan P2K2 saya</option>` : '') + opt;
+  $('iPid').innerHTML = '<option value="">— pilih pendamping —</option>' + opt;
+  $('kPid').innerHTML = '<option value="">— pilih pendamping —</option>' + opt;
 }
 
 async function keluar(diam){
@@ -656,13 +696,13 @@ function tampilLaporan(){
   $('sJml').textContent = list.length;
   $('sHadir').textContent = list.reduce((a,l)=>a+(+l.hadir||0),0);
   $('sBelum').textContent = list.filter(l=>l.statusSiks!=='Sudah').length;
-  if(!list.length){ $('listLap').innerHTML = '<div class="kosong">Belum ada laporan di bulan ini.<br><br><button class="btn" onclick="bukaForm(null)">+ Buat laporan</button></div>'; return; }
+  if(!list.length){ $('listLap').innerHTML = '<div class="kosong">Belum ada laporan '+(isKatim()?'supervisi ':'')+'di bulan ini.<br><br><button class="btn" onclick="bukaForm(null)">+ Buat laporan'+(isKatim()?' supervisi':'')+'</button></div>'; return; }
   $('listLap').innerHTML = list.map(l => {
     const ok = l.statusSiks==='Sudah';
     return `<div class="lap ${ok?'':'belum'}">
-      <div class="t">${esc(tglIndo(l.tanggal))} · ${esc(l.desa)} / ${esc(l.kelompok)}</div>
+      <div class="t">${l.jenis==='supervisi'?'<span class="badge" style="background:#e0e7ff;color:#3730a3">SUPERVISI</span> ':''}${esc(tglIndo(l.tanggal))} · ${esc(l.desa)} / ${esc(l.kelompok)}</div>
       <div class="muted">${esc(l.modul)}${l.materi&&l.materi!==l.modul?' — '+esc(l.materi):''}</div>
-      <div class="muted">Hadir ${esc(l.hadir)} · Sakit ${esc(l.sakit)} · Izin ${esc(l.izin)} · Alpa ${esc(l.alpa)}${isAdmin()?' · '+esc(l.namaPendamping):''}</div>
+      <div class="muted">Hadir ${esc(l.hadir)} · Sakit ${esc(l.sakit)} · Izin ${esc(l.izin)} · Alpa ${esc(l.alpa)}${isPenyelia()?' · '+esc(l.namaPendamping):''}${isAdmin()&&l.namaKatim?' · Katim '+esc(l.namaKatim):''}${l.manual?' · kelompok lainnya':''}</div>
       <div style="margin-top:4px"><span class="badge ${ok?'b-ok':'b-belum'}">${ok?'✓ Sudah input SIKS':'Belum input SIKS'}</span>
         <span class="muted" style="font-size:11.5px">${esc(l.noLaporan)}</span></div>
       <div class="aksi">
@@ -720,18 +760,26 @@ async function tambahWatermark(bytes, teks, teksQr){
 }
 
 /* Tempel halaman-halaman PDF daftar hadir ke akhir laporan (ukuran disamakan A4) */
-async function gabungLampiran(bytes, b64){
-  const { PDFDocument } = window.PDFLib;
+async function gabungLampiran(bytes, b64, judul){
+  const { PDFDocument, StandardFonts, rgb } = window.PDFLib;
   const doc = await PDFDocument.load(bytes);
   const bin = atob(b64), lb = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) lb[i]=bin.charCodeAt(i);
   const lamp = await PDFDocument.load(lb, { ignoreEncryption:true });
   const { width:W, height:H } = doc.getPages()[0].getSize();
   const emb = await doc.embedPages(lamp.getPages());
-  emb.forEach(ep => {
+  const baris = judul ? String(judul).split('\n') : [];
+  const fB = baris.length ? await doc.embedFont(StandardFonts.TimesRomanBold) : null;
+  const fR = baris.length ? await doc.embedFont(StandardFonts.TimesRoman) : null;
+  emb.forEach((ep, i) => {
     const pg = doc.addPage([W, H]);
-    const sk = Math.min((W-40)/ep.width, (H-40)/ep.height);
+    const atas = (i===0 && baris.length) ? 30 + baris.length*16 : 0;   // ruang judul lampiran di halaman pertama
+    const sk = Math.min((W-40)/ep.width, (H-40-atas)/ep.height);
     const w = ep.width*sk, h = ep.height*sk;
-    pg.drawPage(ep, { x:(W-w)/2, y:(H-h)/2, width:w, height:h });
+    pg.drawPage(ep, { x:(W-w)/2, y:(H-atas-h)/2, width:w, height:h });
+    if(atas) baris.forEach((t, j) => {
+      const f = j===0 ? fB : fR, sz = 12, tw = f.widthOfTextAtSize(t, sz);
+      pg.drawText(t, { x:(W-tw)/2, y:H-34-j*16, size:sz, font:f, color:rgb(0,0,0) });
+    });
   });
   return await doc.save();
 }
@@ -742,7 +790,7 @@ async function unduhPdf(id){
     const bin = atob(r.b64); let arr = new Uint8Array(bin.length);
     for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
     if(r.lampiran && window.PDFLib){
-      try{ arr = await jalan('Menggabungkan PDF daftar hadir…', () => gabungLampiran(arr, r.lampiran)); }
+      try{ arr = await jalan('Menggabungkan PDF daftar hadir…', () => gabungLampiran(arr, r.lampiran, r.judulLampiran)); }
       catch(e){ toast('PDF daftar hadir tidak bisa digabung (mungkin terkunci/rusak).', true); }
     }
     let adaWm = false;
@@ -784,8 +832,11 @@ async function salinSiks(id){
     'Materi: '+(l.materi||l.modul),
     'Modul: '+l.modul,
     'Hadir: '+l.hadir+'  Sakit: '+l.sakit+'  Izin: '+l.izin+'  Alpa: '+l.alpa,
-    '', 'RANGKUMAN KEGIATAN:', l.rangkuman, '', 'SIMPULAN:', l.simpulan, '',
+    '', 'RANGKUMAN KEGIATAN:', l.rangkuman, '',
+    ...(l.jenis==='supervisi' ? ['TEMUAN LAPANGAN DAN TINDAK LANJUT:', l.temuan, ''] : []),
+    'SIMPULAN:', l.simpulan, '',
     'DAFTAR HADIR:',
+    ...(l.manual==='Y' ? ['(Kelompok lainnya — lihat lampiran daftar hadir bertanda tangan)'] : []),
     ...l.absensi.map((a,i)=>(i+1)+'. '+a.nama+' | NIK '+(a.nik||'-')+' | KK '+(a.noKk||'-')+' | '+a.status+(a.keterangan?' ('+a.keterangan+')':''))
   ].join('\n');
   modal(`<h3>Teks untuk input ulang ke SIKS</h3>
@@ -805,21 +856,75 @@ async function salinSiks(id){
  *  FORM LAPORAN
  * ========================================================= */
 const draftKey = () => 'p2k2_draft_'+(S.user?S.user.id:'');
-const FIELDS = ['iTgl','iMulai','iSelesai','iTempat','iPemateri','iJabatan','iMateri','iRangkuman'];
+const FIELDS = ['iTgl','iMulai','iSelesai','iTempat','iPemateri','iJabatan','iMateri','iRangkuman','iDesaL','iKelL','iJH','iJS','iJI','iJA'];
+const JML = {iJH:'hadir', iJS:'sakit', iJI:'izin', iJA:'alpa'};
+const isLain = () => $('iGrup').value === LAIN;
+const isSupF = () => !!(S.f && S.f.jenis === 'supervisi');
+
+/* Tampilkan bagian form sesuai jenis: kelompok lainnya (isi jumlah) / kelompok KPM (daftar hadir) / supervisi Katim */
+function aturForm(){
+  const lain = isLain();
+  $('lainBox').classList.toggle('hide', !lain);
+  $('jmlCard').classList.toggle('hide', !lain);
+  $('absCard').classList.toggle('hide', lain);
+  $('supBox').classList.toggle('hide', !isSupF());
+  $('temuanBox').classList.toggle('hide', !isSupF());
+  $('fPidWrap').classList.toggle('hide', !(isAdmin() || isSupF()));
+  $('jenisTabs').classList.toggle('hide', !(isKatim() && S.f && !S.f.id));
+  $('kecBox').classList.toggle('hide', !pemilikKatim());
+  $('bTambahKpmCepat').classList.toggle('hide', isSupF());
+}
+/* Laporan P2K2 milik Katim sendiri → kecamatan kegiatan diisi manual */
+function pemilikKatim(){
+  if(!S.f || isSupF()) return false;
+  if(isKatim()) return true;
+  return (S.pendamping.find(p => p.id === S.f.pid) || {}).role === 'katim';
+}
+/* Katim: pilih jenis laporan (P2K2 sendiri / supervisi pendamping) */
+document.querySelectorAll('[data-jl]').forEach(b => b.onclick = async () => {
+  if(!S.f || S.f.id) return;
+  S.f.jenis = b.dataset.jl;
+  document.querySelectorAll('[data-jl]').forEach(x => x.classList.toggle('on', x===b));
+  S.f.pid = isSupF() ? '' : S.user.id; S.f.abs = {}; S.f.sumberId = ''; S.f.fotoDari = '';
+  $('iPid').disabled = false; $('iPid').value = '';
+  $('fJudul').textContent = isSupF() ? 'Laporan Supervisi P2K2 Baru' : 'Laporan P2K2 Baru';
+  $('iPemateri').value = isSupF() ? '' : S.user.nama;
+  if(!isSupF() && !$('iKec').value) $('iKec').value = S.user.kecamatan || '';
+  await isiGrup('');
+  aturForm(); perbaruiSimpulan();
+});
 
 async function bukaForm(id){
   pindah('vForm');
-  S.f = { id:id||null, pid: isAdmin()? '' : S.user.id, abs:{}, foto:null, scan:null, hapusScan:false, adaFoto:false, adaScan:false, lat:'', lng:'' };
+  S.f = { id:id||null, pid: isAdmin()? '' : S.user.id, abs:{}, foto:null, scan:null, hapusScan:false, adaFoto:false, adaScan:false, lat:'', lng:'',
+          jenis:'', sumberId:'', fotoDari:'' };
   $('fJudul').textContent = id ? 'Ubah Laporan P2K2' : 'Laporan P2K2 Baru';
+  document.querySelectorAll('[data-jl]').forEach(x => x.classList.toggle('on', x.dataset.jl===''));
+  $('iKec').value = isKatim() ? (S.user.kecamatan||'') : '';
+  $('iTemuan').value=''; Object.keys(JML).forEach(k => $(k).value=''); $('iDesaL').value=''; $('iKelL').value='';
+  $('iSumber').innerHTML='<option value="">— isi manual (tanpa laporan pendamping) —</option>'; $('iSumber').disabled=false;
   $('iFoto').value=''; $('iScan').value=''; $('upFoto').textContent=''; $('upScan').textContent='';
   $('pFoto').classList.add('hide'); $('pScan').classList.add('hide'); $('pScanPdf').classList.add('hide'); $('bHapusScan').classList.add('hide');
   $('bBersih').classList.toggle('hide', !!id); $('draftInfo').textContent='';
   if(id){
     let l; try{ l = await jalan('Memuat laporan…', () => call('getLaporan', id)); }catch(e){ return pindah('vLaporan'); }
     S.f.pid = l.pendampingId; S.f.adaFoto=!!l.fotoId; S.f.adaScan=!!l.scanId; S.f.lat=l.lat; S.f.lng=l.lng;
+    S.f.jenis = l.jenis||''; S.f.sumberId = l.sumberId||'';
+    if(l.jenis==='supervisi') $('fJudul').textContent = 'Ubah Laporan Supervisi P2K2';
+    $('iTemuan').value = l.temuan||'';
     l.absensi.forEach(a => S.f.abs[a.kpmId] = {status:a.status, keterangan:a.keterangan});
-    if(isAdmin()){ $('iPid').value = l.pendampingId; $('iPid').disabled = true; }
-    await isiGrup(l.desa+'||'+l.kelompok);
+    $('iKec').value = l.kecamatan || '';
+    if(isPenyelia()){
+      if(![...$('iPid').options].some(o => o.value === l.pendampingId))
+        $('iPid').insertAdjacentHTML('beforeend', `<option value="${esc(l.pendampingId)}">${esc(l.namaPendamping)}</option>`);
+      $('iPid').value = l.pendampingId; $('iPid').disabled = true;
+    }
+    if(isSupF()){ $('iSumber').disabled = true; $('sumberInfo').textContent = l.sumberId ? 'Diambil dari laporan pendamping (tidak bisa diganti saat mengubah).' : 'Diisi manual.'; }
+    if(l.manual==='Y'){
+      $('iDesaL').value=l.desa; $('iKelL').value=l.kelompok;
+      $('iJH').value=l.hadir; $('iJS').value=l.sakit; $('iJI').value=l.izin; $('iJA').value=l.alpa;
+      await isiGrup(LAIN);
+    } else await isiGrup(l.desa+'||'+l.kelompok);
     $('iTgl').value=l.tanggal; $('iMulai').value=l.jamMulai; $('iSelesai').value=l.jamSelesai; $('iTempat').value=l.tempat;
     $('iPemateri').value=l.pemateri; $('iJabatan').value=l.jabatan; $('iMateri').value=l.materi;
     setModul(l.modul);
@@ -827,21 +932,24 @@ async function bukaForm(id){
     if(S.f.adaFoto) $('geoInfo').textContent='Foto tersimpan. Pilih foto baru hanya jika ingin mengganti.';
     if(S.f.adaScan){ $('bHapusScan').classList.remove('hide'); }
   } else {
-    if(isAdmin()){ $('iPid').disabled=false; $('iPid').value=''; }
+    if(isPenyelia()){ $('iPid').disabled=false; $('iPid').value=''; }
+    $('sumberInfo').textContent = 'Pilih pendamping & tanggal, lalu pilih laporannya → data kegiatan, daftar hadir, rangkuman & foto terisi otomatis. Atau isi manual.';
     $('iTgl').value=hariIni(); $('iMulai').value='16:00'; $('iSelesai').value='17:00';
     $('iTempat').value='';
     $('iPemateri').value=isAdmin()?'':S.user.nama; $('iJabatan').value=S.settings.instansiPemateri||'';
     $('iMateri').value=''; $('iRangkuman').value='';
     setModul(S.modul[0]);
     const dr = ls.get(draftKey());
-    if(dr && !isAdmin()){
+    if(dr && !isPenyelia()){
       FIELDS.forEach(k => { if(dr[k]!=null) $(k).value = dr[k]; });
       setModul(dr.modul||S.modul[0]); S.f.abs = dr.abs||{};
       await isiGrup(dr.grup||'');
       $('draftInfo').textContent='Draft terakhir dipulihkan dari HP ini.';
+      hitung();
     } else await isiGrup('');
     $('iCap').checked = false; $('geoInfo').textContent='';
   }
+  aturForm();
   perbaruiSimpulan();
 }
 
@@ -856,23 +964,62 @@ $('iModul').onchange = () => {
   simpanDraft();
 };
 
-$('iPid').onchange = async () => { S.f.pid=$('iPid').value; S.f.abs={}; await isiGrup(''); };
+$('iPid').onchange = async () => { S.f.pid=$('iPid').value; S.f.abs={}; S.f.sumberId=''; S.f.fotoDari=''; await isiGrup(''); muatSumber(); };
+$('iTgl').addEventListener('change', () => { if(isSupF() && !S.f.id) muatSumber(); });
+
+/* ---------- Supervisi Katim: ambil data dari laporan pendamping ---------- */
+async function muatSumber(){
+  if(!isSupF() || S.f.id) return;
+  const pid = S.f.pid, bln = ($('iTgl').value||hariIni()).slice(0,7);
+  if(S.f.fotoDari) $('geoInfo').textContent = '';
+  S.f.sumberId = ''; S.f.fotoDari = '';
+  $('iSumber').innerHTML = '<option value="">— isi manual (tanpa laporan pendamping) —</option>';
+  if(!pid) return;
+  let list = [];
+  try{ list = await jalan('Memuat laporan pendamping…', () => call('listSumber', pid, bln)); }catch(e){ return; }
+  $('iSumber').innerHTML += list.map(l => `<option value="${esc(l.id)}">${esc(tglIndo(l.tanggal))} · ${esc(l.desa)} / ${esc(l.kelompok)} · hadir ${esc(l.hadir)}</option>`).join('');
+  $('sumberInfo').textContent = list.length ? list.length+' laporan pendamping di bulan '+BULAN[+bln.slice(5,7)-1]+' '+bln.slice(0,4)+'.'
+    : 'Belum ada laporan pendamping ini di bulan tersebut — isi manual, atau ganti tanggal kegiatan.';
+}
+$('iSumber').onchange = async () => {
+  const sid = $('iSumber').value;
+  S.f.sumberId = sid; S.f.fotoDari = '';
+  if(!sid) return;
+  let l; try{ l = await jalan('Mengambil data laporan pendamping…', () => call('getLaporan', sid)); }catch(e){ return; }
+  $('iTgl').value=l.tanggal; $('iMulai').value=l.jamMulai; $('iSelesai').value=l.jamSelesai; $('iTempat').value=l.tempat;
+  $('iPemateri').value=l.pemateri; $('iJabatan').value=l.jabatan; $('iMateri').value=l.materi; setModul(l.modul);
+  $('iRangkuman').value=l.rangkuman;
+  S.f.abs = {};
+  if(l.manual==='Y'){
+    $('iDesaL').value=l.desa; $('iKelL').value=l.kelompok;
+    $('iJH').value=l.hadir; $('iJS').value=l.sakit; $('iJI').value=l.izin; $('iJA').value=l.alpa;
+    await isiGrup(LAIN);
+  } else {
+    l.absensi.forEach(a => S.f.abs[a.kpmId] = {status:a.status, keterangan:a.keterangan});
+    await isiGrup(l.desa+'||'+l.kelompok);
+  }
+  if(l.fotoId && !S.f.foto){ S.f.fotoDari = sid; $('geoInfo').textContent = '✓ Foto kegiatan diambil dari laporan pendamping. Pilih foto baru hanya jika ingin mengganti.'; }
+  perbaruiSimpulan();
+  toast('Data laporan pendamping terisi. Lengkapi temuan & tindak lanjut.');
+};
 
 async function isiGrup(pilih){
   const kpm = await kpmUntuk(S.f.pid);
   const g = {}; kpm.forEach(k => g[k.desa+'||'+k.kelompok] = (g[k.desa+'||'+k.kelompok]||0)+1);
   const keys = Object.keys(g).sort();
-  if(pilih && !g[pilih]) { keys.push(pilih); g[pilih]=0; }
+  if(pilih && pilih!==LAIN && !g[pilih]) { keys.push(pilih); g[pilih]=0; }
   $('iGrup').innerHTML = (keys.length?'':'<option value="">—</option>') +
-    keys.map(k => { const [d,kl]=k.split('||'); return `<option value="${esc(k)}">${esc(d)} – ${esc(kl)} (${g[k]} KPM)</option>`; }).join('');
-  $('hintKpm').classList.toggle('hide', !!keys.length || (isAdmin() && !S.f.pid));
+    keys.map(k => { const [d,kl]=k.split('||'); return `<option value="${esc(k)}">${esc(d)} – ${esc(kl)} (${g[k]} KPM)</option>`; }).join('') +
+    `<option value="${LAIN}">➕ Kelompok lainnya (tulis sendiri)…</option>`;
+  $('hintKpm').classList.toggle('hide', !!keys.length || (isPenyelia() && !S.f.pid));
   if(pilih) $('iGrup').value = pilih;
+  aturForm();
   renderAbs();
 }
-$('iGrup').onchange = () => { renderAbs(); simpanDraft(); };
+$('iGrup').onchange = () => { aturForm(); renderAbs(); simpanDraft(); if(isLain()) $('iDesaL').focus(); };
 
 function kpmGrup(){
-  const v = $('iGrup').value; if(!v) return [];
+  const v = $('iGrup').value; if(!v || v===LAIN) return [];
   const [d,k] = v.split('||');
   return (S.kpmBy[S.f.pid]||[]).filter(x => x.desa===d && x.kelompok===k);
 }
@@ -883,6 +1030,7 @@ function renderAbs(){
   const ids = new Set(list.map(k=>k.id));
   Object.keys(S.f.abs).forEach(id => { if(!ids.has(id)) delete S.f.abs[id]; });
   const st = ['Hadir','Sakit','Izin','Alpa'];
+  if(isLain()){ $('listAbs').innerHTML=''; hitung(); return; }
   $('listAbs').innerHTML = list.length ? list.map(k => {
     const a = S.f.abs[k.id];
     return `<div class="abs"><div class="n">${esc(k.nama)}<small>${esc(k.nik||'NIK belum diisi')}</small></div>
@@ -894,14 +1042,20 @@ function setAbs(id, s){ S.f.abs[id].status = s; renderAbs(); simpanDraft(); }
 $('bSemuaHadir').onclick = () => { Object.values(S.f.abs).forEach(a=>a.status='Hadir'); renderAbs(); simpanDraft(); };
 
 function hitung(){
-  const h={Hadir:0,Sakit:0,Izin:0,Alpa:0}; Object.values(S.f.abs).forEach(a=>h[a.status]++);
+  const h={Hadir:0,Sakit:0,Izin:0,Alpa:0};
+  if(isLain()){
+    const n = id => Math.max(0, parseInt($(id).value,10)||0);
+    h.Hadir=n('iJH'); h.Sakit=n('iJS'); h.Izin=n('iJI'); h.Alpa=n('iJA');
+    return h;
+  }
+  Object.values(S.f.abs).forEach(a=>h[a.status]++);
   $('hit').innerHTML = Object.keys(h).map(k=>`<span><b>${h[k]}</b> ${k}</span>`).join('') + `<span>Total ${Object.keys(S.f.abs).length}</span>`;
   return h;
 }
 
 $('bTambahKpmCepat').onclick = () => {
   if(isAdmin() && !S.f.pid) return toast('Pilih pendamping dulu.', true);
-  const v = $('iGrup').value.split('||');
+  const v = isLain() ? ['',''] : $('iGrup').value.split('||');
   formKpm({desa:v[0]||'', kelompok:v[1]||''}, S.f.pid, async (baru) => { await isiGrup(baru.desa+'||'+baru.kelompok); simpanDraft(); });
 };
 
@@ -953,8 +1107,8 @@ $('iFoto').onchange = async e => {
   const waktu = new Date(f.lastModified || Date.now());
   const jam = String(waktu.getHours()).padStart(2,'0')+':'+String(waktu.getMinutes()).padStart(2,'0');
   const tgl = waktu.getDate()+' '+BULAN[waktu.getMonth()]+' '+waktu.getFullYear();
-  const [d,k] = ($('iGrup').value||'||').split('||');
-  const kec = isAdmin() ? ((S.pendamping.find(p=>p.id===S.f.pid)||{}).kecamatan||'') : S.user.kecamatan;
+  const {desa:d, kel:k} = dataForm();
+  const kec = pemilikKatim() ? $('iKec').value.trim() : isPenyelia() ? ((S.pendamping.find(p=>p.id===S.f.pid)||{}).kecamatan||'') : S.user.kecamatan;
   const cap = [jam+'  '+tgl,
     'Desa '+(d||'-')+(k?' · Kelompok '+k:''),
     'Kec. '+(kec||'-')+', Kab. '+(S.settings.kabupaten||'')+', '+(S.settings.provinsi||'')];
@@ -963,6 +1117,7 @@ $('iFoto').onchange = async e => {
   try{
     S.f.foto = await jalan('Memproses foto…', () => olahGambar(f, 1280, pakaiCap ? cap : null));
     if(pakaiCap && S.geo){ S.f.lat=S.geo.lat; S.f.lng=S.geo.lng; }
+    S.f.fotoDari = '';
     $('pFoto').src=S.f.foto; $('pFoto').classList.remove('hide');
     unggahLatar('foto', S.f.foto);
   }catch(e){}
@@ -1004,7 +1159,8 @@ $('bHapusScan').onclick = () => { S.f.scan=null; S.f.scanId=null; S.f.scanUp=nul
 
 /* ---------- Narasi otomatis ---------- */
 function dataForm(){
-  const [desa, kel] = ($('iGrup').value||'||').split('||');
+  const [desa, kel] = isLain() ? [$('iDesaL').value.trim().toUpperCase(), $('iKelL').value.trim().toUpperCase()]
+                               : ($('iGrup').value||'||').split('||');
   return { desa, kel, tgl:$('iTgl').value, mulai:$('iMulai').value, selesai:$('iSelesai').value,
     tempat:$('iTempat').value.trim(), modul:$('iModul').value, materi:$('iMateri').value.trim() };
 }
@@ -1035,14 +1191,31 @@ function simpulanBaku(materi){
   const m = String(materi||'').trim().replace(/[.\s]+$/, '');
   return 'Pelaksanaan Pertemuan Peningkatan Kemampuan Keluarga (P2K2) berjalan dengan baik, tertib. KPM mampu memahami materi yang diberikan dan menunjukkan antusiasme dan keterlibatan aktif dalam diskusi, yang menunjukkan bahwa kegiatan ini memberikan dampak pada perubahan perilaku serta peningkatan kemampuan keluarga dalam hal ' + m + '.';
 }
-function perbaruiSimpulan(){ const d = dataForm(); $('tSimpulan').textContent = simpulanBaku(d.materi || d.modul); }
+function simpulanSupervisi(modul){
+  const m = String(modul||'').trim().replace(/[.\s]+$/, '');
+  return 'Berdasarkan hasil supervisi yang dilakukan, pelaksanaan Pertemuan Peningkatan Kemampuan Keluarga (P2K2) berjalan dengan baik dan tertib, dengan Pendamping Sosial PKH menjalankan fasilitasi sesuai standar operasional prosedur (SOP) yang berlaku. KPM mampu memahami materi yang diberikan dan menunjukkan antusiasme dan keterlibatan aktif dalam diskusi, yang menunjukkan bahwa kegiatan ini memberikan dampak pada perubahan perilaku serta peningkatan kemampuan keluarga dalam hal ' + m + '.';
+}
+function perbaruiSimpulan(){ const d = dataForm(); $('tSimpulan').textContent = isSupF() ? simpulanSupervisi(d.modul) : simpulanBaku(d.materi || d.modul); }
+
+/* Temuan & tindak lanjut otomatis (bisa diedit) — mengikuti jumlah KPM yang tidak hadir */
+$('bAutoT').onclick = () => {
+  const h = hitung(), tdk = h.Sakit + h.Izin + h.Alpa;
+  let t;
+  if(tdk){
+    const rinci = [h.Sakit?h.Sakit+' sakit':'', h.Izin?h.Izin+' izin':'', h.Alpa?h.Alpa+' alpa':''].filter(Boolean).join(', ');
+    t = `Pada pelaksanaannya, Ketua Tim selaku penyelia menemukan beberapa kendala dan permasalahan di lapangan, yaitu terdapat ${tdk} KPM yang tidak hadir saat kegiatan P2K2 (${rinci}), sehingga diperlukan langkah tindak lanjut sebagai upaya penyelesaian guna mendukung optimalisasi pelaksanaan P2K2 ke depan. Adapun langkah tindak lanjut yang sudah dilaksanakan adalah menitipkan pesan kepada tetangga KPM agar KPM yang bersangkutan hadir pada pertemuan bulan berikutnya. Selain itu, pendamping juga dapat mengunjungi langsung rumah KPM yang tidak hadir guna mengetahui penyebab ketidakhadirannya.`;
+  } else {
+    t = `Pada pelaksanaannya, Ketua Tim selaku penyelia tidak menemukan kendala berarti di lapangan. Seluruh KPM hadir dan mengikuti kegiatan P2K2 dengan aktif, serta Pendamping Sosial PKH menyampaikan materi sesuai modul. Sebagai tindak lanjut, pendamping diharapkan mempertahankan kualitas fasilitasi dan kehadiran KPM pada pertemuan berikutnya.`;
+  }
+  $('iTemuan').value = t;
+};
 ['iMateri'].forEach(id => $(id).addEventListener('input', perbaruiSimpulan));
 $('iModul').addEventListener('change', perbaruiSimpulan);
 
 /* ---------- Draft & simpan ---------- */
 let draftT;
 function simpanDraft(){
-  if(!S.f || S.f.id || isAdmin()) return;
+  if(!S.f || S.f.id || isPenyelia()) return;
   clearTimeout(draftT);
   draftT = setTimeout(() => {
     const d = { grup:$('iGrup').value, modul:$('iModul').value, abs:S.f.abs };
@@ -1051,25 +1224,37 @@ function simpanDraft(){
   }, 600);
 }
 FIELDS.forEach(k => $(k).addEventListener('input', simpanDraft));
+Object.keys(JML).forEach(k => $(k).addEventListener('input', () => hitung()));
 
 $('bBersih').onclick = () => { ls.del(draftKey()); bukaForm(null); toast('Form dikosongkan.'); };
 $('bBatal').onclick = () => pindah('vLaporan');
 
 $('bSimpan').onclick = async () => {
   const d = dataForm();
-  if(isAdmin() && !S.f.pid) return toast('Pilih pendamping.', true);
+  if(isPenyelia() && !S.f.pid) return toast('Pilih pendamping.', true);
+  if(pemilikKatim() && !$('iKec').value.trim()){ $('iKec').focus(); return toast('Isi kecamatan tempat kegiatan.', true); }
+  const lain = isLain();
+  if(lain && !d.desa){ $('iDesaL').focus(); return toast('Tulis nama desa.', true); }
+  if(lain && !d.kel){ $('iKelL').focus(); return toast('Tulis nama kelompok.', true); }
   if(!d.desa) return toast('Pilih desa–kelompok.', true);
   if(!d.tgl) return toast('Isi tanggal kegiatan.', true);
   if(!d.tempat){ $('iTempat').focus(); return toast('Isi tempat pelaksanaan.', true); }
   if(d.mulai && d.selesai && d.selesai <= d.mulai){ $('iSelesai').focus(); return toast('Jam selesai harus setelah jam mulai.', true); }
-  if(!Object.keys(S.f.abs).length) return toast('Daftar hadir kosong.', true);
-  if(!S.f.foto && !S.f.adaFoto && !confirm('Belum ada foto kegiatan. Tetap simpan?')) return;
+  const jh = hitung();
+  if(lain && !(jh.Hadir+jh.Sakit+jh.Izin+jh.Alpa)){ $('iJH').focus(); return toast('Isi jumlah peserta kelompok.', true); }
+  if(!lain && !Object.keys(S.f.abs).length) return toast('Daftar hadir kosong.', true);
+  if(isSupF() && !$('iTemuan').value.trim()){ $('iTemuan').focus(); return toast('Isi temuan lapangan dan tindak lanjut (atau tekan Susun otomatis).', true); }
+  if(!S.f.foto && !S.f.adaFoto && !S.f.fotoDari && !confirm('Belum ada foto kegiatan. Tetap simpan?')) return;
+  const tanpaScan = lain && !S.f.scan && !S.f.adaScan;   // opsional: cukup diingatkan setelah tersimpan
   if(!$('iRangkuman').value.trim()) $('bAutoR').click();
   const payload = {
     id:S.f.id, pendampingId:S.f.pid, desa:d.desa, kelompok:d.kel, tanggal:d.tgl, jamMulai:d.mulai, jamSelesai:d.selesai,
     tempat:d.tempat, pemateri:$('iPemateri').value, jabatan:$('iJabatan').value, modul:d.modul, materi:d.materi,
     rangkuman:$('iRangkuman').value, lat:S.f.lat, lng:S.f.lng,
-    absensi:Object.keys(S.f.abs).map(k=>({kpmId:k, status:S.f.abs[k].status, keterangan:S.f.abs[k].keterangan||''})),
+    absensi: lain ? [] : Object.keys(S.f.abs).map(k=>({kpmId:k, status:S.f.abs[k].status, keterangan:S.f.abs[k].keterangan||''})),
+    manual: lain, jumlah: lain ? {hadir:jh.Hadir, sakit:jh.Sakit, izin:jh.Izin, alpa:jh.Alpa} : null,
+    jenis: S.f.jenis||'', kecamatan: $('iKec').value.trim(),
+    temuan: $('iTemuan').value, sumberId: S.f.sumberId||'', fotoDari: S.f.foto ? '' : (S.f.fotoDari||''),
     hapusScan:S.f.hapusScan
   };
   try{
@@ -1080,7 +1265,7 @@ $('bSimpan').onclick = async () => {
       return call('saveLaporan', payload);
     });
     if(!S.f.id) ls.del(draftKey());
-    toast('Tersimpan: '+r.noLaporan);
+    toast('Tersimpan: '+r.noLaporan + (tanpaScan ? ' — catatan: daftar hadir bertanda tangan belum diunggah (opsional, bisa ditambah lewat Ubah).' : ''), false);
     // tampilkan langsung tanpa memuat ulang daftar dari server
     const bln = r.tanggal.slice(0,7);
     if($('fBulan').value === bln && S.lapList){
@@ -1207,32 +1392,33 @@ $('bCsv').onclick = () => {
 function renderPend(){
   $('listPend').innerHTML = S.pendamping.length ? S.pendamping.slice().sort((a,b)=>(a.kecamatan+a.nama).localeCompare(b.kecamatan+b.nama)).map(p =>
     `<div class="kpm" style="${p.aktif==='N'?'opacity:.5':''}"><div>${esc(p.nama)}${p.aktif==='N'?' (nonaktif)':''}
-      <small>Kec. ${esc(p.kecamatan)} · ${esc(p.username)}${p.nip?' · NIP '+esc(p.nip):''}</small></div>
+      <small>${p.role==='katim'?'<b style="color:#3730a3">Katim Kabupaten</b>':'Kec. '+esc(p.kecamatan)} · ${esc(p.username)}${p.nip?' · NIP '+esc(p.nip):''}</small></div>
       <button class="btn ghost kecil" onclick="formPend('${p.id}')">Ubah</button></div>`).join('')
-    : '<div class="kosong">Belum ada pendamping. Tambahkan 30 akun pendamping di sini.</div>';
+    : '<div class="kosong">Belum ada pendamping. Tambahkan 30 akun pendamping (dan 1 akun Katim kabupaten) di sini.</div>';
 }
 function formPend(id){
   const p = S.pendamping.find(x=>x.id===id) || {};
-  modal(`<h3>${id?'Ubah':'Tambah'} pendamping</h3>
+  modal(`<h3>${id?'Ubah':'Tambah'} akun</h3>
+    <label>Peran</label><select id="mpRole"><option value="pendamping">Pendamping sosial</option><option value="katim">Ketua Tim (Katim) Kabupaten — laporan supervisi</option></select>
     <label>Nama lengkap</label><input id="mpNama" value="${esc(p.nama||'')}">
     <label>NIP</label><input id="mpNip" value="${esc(p.nip||'')}">
     <label>NIK pendamping (16 angka — dipakai di watermark PDF)</label><input id="mpNik" inputmode="numeric" maxlength="16" value="${esc(p.nik||'')}">
-    <label>Kecamatan tugas</label><input id="mpKec" value="${esc(p.kecamatan||'')}">
+    <label>Kecamatan tugas <span id="mpKecOps" style="font-weight:400"></span></label><input id="mpKec" value="${esc(p.kecamatan||'')}">
     <label>Username</label><input id="mpUser" autocapitalize="off" value="${esc(p.username||'')}" placeholder="cth. evi.sulastri">
     <label>${id?'Reset PIN (kosongkan jika tidak diubah)':'PIN awal (6 angka)'}</label><input id="mpPin" inputmode="numeric" maxlength="6">
     ${id?`<label>Status</label><select id="mpAktif"><option value="Y">Aktif</option><option value="N">Nonaktif</option></select>`:''}
     <div class="row" style="margin-top:14px"><button class="btn ghost" onclick="tutupModal()">Batal</button><button class="btn" id="mpSimpan">Simpan</button></div>`);
   if(id) $('mpAktif').value = p.aktif||'Y';
+  $('mpRole').value = p.role==='katim' ? 'katim' : 'pendamping';
+  const aturRole = () => { $('mpKecOps').textContent = $('mpRole').value==='katim' ? '(boleh kosong untuk Katim)' : ''; };
+  $('mpRole').onchange = aturRole; aturRole();
   $('mpSimpan').onclick = async () => {
-    const d = {id, nama:$('mpNama').value, nip:$('mpNip').value, nik:$('mpNik').value, kecamatan:$('mpKec').value, username:$('mpUser').value, pinBaru:$('mpPin').value, aktif:id?$('mpAktif').value:'Y'};
+    const d = {id, role:$('mpRole').value, nama:$('mpNama').value, nip:$('mpNip').value, nik:$('mpNik').value, kecamatan:$('mpKec').value, username:$('mpUser').value, pinBaru:$('mpPin').value, aktif:id?$('mpAktif').value:'Y'};
     try{
       const r = await jalan('Menyimpan…', () => call('savePendamping', d));
       const i = S.pendamping.findIndex(x=>x.id===r.id); if(i>=0) S.pendamping[i]=r; else S.pendamping.push(r);
       tutupModal(); toast('Pendamping tersimpan.'); renderPend();
-      const opt = S.pendamping.map(p => `<option value="${esc(p.id)}">${esc(p.nama)} — ${esc(p.kecamatan)}</option>`).join('');
-      $('fPend').innerHTML = '<option value="">Semua pendamping</option>'+opt;
-      $('iPid').innerHTML = '<option value="">— pilih pendamping —</option>'+opt;
-      $('kPid').innerHTML = '<option value="">— pilih pendamping —</option>'+opt;
+      isiOpsiPendamping();
     }catch(e){}
   };
 }
