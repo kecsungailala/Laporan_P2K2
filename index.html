@@ -196,6 +196,14 @@
           <button type="button" data-jl="supervisi">Supervisi</button>
         </div>
         <div id="fPidWrap" class="hide"><label>Pendamping</label><select id="iPid"></select></div>
+        <div id="pLainBox" class="hide">
+          <label>Nama pendamping</label><input id="iNamaP" placeholder="cth. SRI WAHYUNI">
+          <div class="row">
+            <div><label>NIP (opsional)</label><input id="iNipP" inputmode="numeric"></div>
+            <div><label>Kecamatan</label><input id="iKecP" placeholder="cth. Sungai Lala"></div>
+          </div>
+          <div class="hint">Semua isian diketik sendiri — tidak perlu menunggu laporan pendamping. Desa–kelompok otomatis <b>Kelompok lainnya</b>.</div>
+        </div>
         <div id="supBox" class="hide">
           <label>Laporan pendamping yang disupervisi</label>
           <select id="iSumber"></select>
@@ -445,6 +453,8 @@ const isAdmin = () => S.user && S.user.role === 'admin';
 const isKatim = () => S.user && S.user.role === 'katim';
 const isPenyelia = () => isAdmin() || isKatim();
 const LAIN = '__lainnya';
+const PLAIN = '__lainP';          // pendamping diketik sendiri (khusus supervisi Katim)
+const isPLain = () => !!(S.f && S.f.pid === PLAIN);
 const pendOpsi = () => S.pendamping.filter(p => p.role !== 'katim' && (isAdmin() || p.aktif !== 'N'))
   .map(p => `<option value="${esc(p.id)}">${esc(p.nama)} — ${esc(p.kecamatan)}</option>`).join('');
 const ls = {
@@ -520,7 +530,7 @@ async function mulai(){
   Object.assign(S, { user:r.user, settings:r.settings, modul:r.modul, kpm:r.kpm, pendamping:r.pendamping, kpmBy:{} });
   if(!isAdmin()) S.kpmBy[S.user.id] = S.kpm;
   $('login').classList.add('hide'); $('app').classList.remove('hide');
-  $('hUser').textContent = S.user.nama + (S.user.kecamatan ? ' · Kec. '+S.user.kecamatan : '') + (isAdmin()?' · Admin':'') + (isKatim()?' · Katim Kabupaten':'');
+  $('hUser').textContent = S.user.nama + (S.user.kecamatan && !isKatim() ? ' · Kec. '+S.user.kecamatan : '') + (isAdmin()?' · Admin':'') + (isKatim()?' · Katim Kabupaten':'');
   $('navAdmin').classList.toggle('hide', !isAdmin());
   $('fPendWrap').classList.toggle('hide', !isPenyelia());
   $('kPidWrap').classList.toggle('hide', !isAdmin());
@@ -537,7 +547,7 @@ async function mulai(){
 function isiOpsiPendamping(){
   const opt = pendOpsi();
   $('fPend').innerHTML = '<option value="">Semua</option>' + (isKatim() ? `<option value="${esc(S.user.id)}">Laporan P2K2 saya</option>` : '') + opt;
-  $('iPid').innerHTML = '<option value="">— pilih pendamping —</option>' + opt;
+  $('iPid').innerHTML = '<option value="">— pilih pendamping —</option>' + opt + (isKatim() ? `<option value="${PLAIN}">➕ Lainnya (ketik sendiri)…</option>` : '');
   $('kPid').innerHTML = '<option value="">— pilih pendamping —</option>' + opt;
 }
 
@@ -670,7 +680,7 @@ function pindah(v){
 }
 
 async function kpmUntuk(pid){
-  if(!pid) return [];
+  if(!pid || pid.indexOf('__')===0) return [];
   if(S.kpmBy[pid]) return S.kpmBy[pid];
   const l = await jalan('Memuat KPM…', () => call('listKpm', pid));
   S.kpmBy[pid] = l; return l;
@@ -867,7 +877,8 @@ function aturForm(){
   $('lainBox').classList.toggle('hide', !lain);
   $('jmlCard').classList.toggle('hide', !lain);
   $('absCard').classList.toggle('hide', lain);
-  $('supBox').classList.toggle('hide', !isSupF());
+  $('supBox').classList.toggle('hide', !isSupF() || isPLain());
+  $('pLainBox').classList.toggle('hide', !isPLain());
   $('temuanBox').classList.toggle('hide', !isSupF());
   $('fPidWrap').classList.toggle('hide', !(isAdmin() || isSupF()));
   $('jenisTabs').classList.toggle('hide', !(isKatim() && S.f && !S.f.id));
@@ -902,6 +913,7 @@ async function bukaForm(id){
   document.querySelectorAll('[data-jl]').forEach(x => x.classList.toggle('on', x.dataset.jl===''));
   $('iKec').value = isKatim() ? (S.user.kecamatan||'') : '';
   $('iTemuan').value=''; Object.keys(JML).forEach(k => $(k).value=''); $('iDesaL').value=''; $('iKelL').value='';
+  $('iNamaP').value=''; $('iNipP').value=''; $('iKecP').value='';
   $('iSumber').innerHTML='<option value="">— isi manual (tanpa laporan pendamping) —</option>'; $('iSumber').disabled=false;
   $('iFoto').value=''; $('iScan').value=''; $('upFoto').textContent=''; $('upScan').textContent='';
   $('pFoto').classList.add('hide'); $('pScan').classList.add('hide'); $('pScanPdf').classList.add('hide'); $('bHapusScan').classList.add('hide');
@@ -914,6 +926,10 @@ async function bukaForm(id){
     $('iTemuan').value = l.temuan||'';
     l.absensi.forEach(a => S.f.abs[a.kpmId] = {status:a.status, keterangan:a.keterangan});
     $('iKec').value = l.kecamatan || '';
+    if(l.jenis==='supervisi' && !l.pendampingId){
+      S.f.pid = PLAIN; $('iNamaP').value=l.namaPendamping; $('iNipP').value=l.nip||''; $('iKecP').value=l.kecamatan||'';
+      l.pendampingId = PLAIN;
+    }
     if(isPenyelia()){
       if(![...$('iPid').options].some(o => o.value === l.pendampingId))
         $('iPid').insertAdjacentHTML('beforeend', `<option value="${esc(l.pendampingId)}">${esc(l.namaPendamping)}</option>`);
@@ -964,12 +980,23 @@ $('iModul').onchange = () => {
   simpanDraft();
 };
 
-$('iPid').onchange = async () => { S.f.pid=$('iPid').value; S.f.abs={}; S.f.sumberId=''; S.f.fotoDari=''; await isiGrup(''); muatSumber(); };
+$('iPid').onchange = async () => {
+  S.f.pid=$('iPid').value; S.f.abs={}; S.f.sumberId=''; S.f.fotoDari='';
+  await isiGrup('');
+  if(isPLain()){ $('iNamaP').focus(); return; }
+  muatSumber();
+};
+/* Nama pendamping yang diketik ikut mengisi Nama pemateri (selama pemateri belum diubah manual) */
+let pemateriAuto = '';
+$('iNamaP').addEventListener('input', () => {
+  const v = $('iNamaP').value.trim().toUpperCase();
+  if(!$('iPemateri').value.trim() || $('iPemateri').value === pemateriAuto){ $('iPemateri').value = v; pemateriAuto = v; }
+});
 $('iTgl').addEventListener('change', () => { if(isSupF() && !S.f.id) muatSumber(); });
 
 /* ---------- Supervisi Katim: ambil data dari laporan pendamping ---------- */
 async function muatSumber(){
-  if(!isSupF() || S.f.id) return;
+  if(!isSupF() || S.f.id || isPLain()) return;
   const pid = S.f.pid, bln = ($('iTgl').value||hariIni()).slice(0,7);
   if(S.f.fotoDari) $('geoInfo').textContent = '';
   S.f.sumberId = ''; S.f.fotoDari = '';
@@ -1011,7 +1038,8 @@ async function isiGrup(pilih){
   $('iGrup').innerHTML = (keys.length?'':'<option value="">—</option>') +
     keys.map(k => { const [d,kl]=k.split('||'); return `<option value="${esc(k)}">${esc(d)} – ${esc(kl)} (${g[k]} KPM)</option>`; }).join('') +
     `<option value="${LAIN}">➕ Kelompok lainnya (tulis sendiri)…</option>`;
-  $('hintKpm').classList.toggle('hide', !!keys.length || (isPenyelia() && !S.f.pid));
+  $('hintKpm').classList.toggle('hide', !!keys.length || (isPenyelia() && !S.f.pid) || isPLain());
+  if(isPLain()) pilih = LAIN;
   if(pilih) $('iGrup').value = pilih;
   aturForm();
   renderAbs();
@@ -1108,7 +1136,7 @@ $('iFoto').onchange = async e => {
   const jam = String(waktu.getHours()).padStart(2,'0')+':'+String(waktu.getMinutes()).padStart(2,'0');
   const tgl = waktu.getDate()+' '+BULAN[waktu.getMonth()]+' '+waktu.getFullYear();
   const {desa:d, kel:k} = dataForm();
-  const kec = pemilikKatim() ? $('iKec').value.trim() : isPenyelia() ? ((S.pendamping.find(p=>p.id===S.f.pid)||{}).kecamatan||'') : S.user.kecamatan;
+  const kec = isPLain() ? $('iKecP').value.trim() : pemilikKatim() ? $('iKec').value.trim() : isPenyelia() ? ((S.pendamping.find(p=>p.id===S.f.pid)||{}).kecamatan||'') : S.user.kecamatan;
   const cap = [jam+'  '+tgl,
     'Desa '+(d||'-')+(k?' · Kelompok '+k:''),
     'Kec. '+(kec||'-')+', Kab. '+(S.settings.kabupaten||'')+', '+(S.settings.provinsi||'')];
@@ -1233,6 +1261,8 @@ $('bSimpan').onclick = async () => {
   const d = dataForm();
   if(isPenyelia() && !S.f.pid) return toast('Pilih pendamping.', true);
   if(pemilikKatim() && !$('iKec').value.trim()){ $('iKec').focus(); return toast('Isi kecamatan tempat kegiatan.', true); }
+  if(isPLain() && !$('iNamaP').value.trim()){ $('iNamaP').focus(); return toast('Ketik nama pendamping.', true); }
+  if(isPLain() && !$('iKecP').value.trim()){ $('iKecP').focus(); return toast('Ketik kecamatan pendamping.', true); }
   const lain = isLain();
   if(lain && !d.desa){ $('iDesaL').focus(); return toast('Tulis nama desa.', true); }
   if(lain && !d.kel){ $('iKelL').focus(); return toast('Tulis nama kelompok.', true); }
@@ -1248,7 +1278,9 @@ $('bSimpan').onclick = async () => {
   const tanpaScan = lain && !S.f.scan && !S.f.adaScan;   // opsional: cukup diingatkan setelah tersimpan
   if(!$('iRangkuman').value.trim()) $('bAutoR').click();
   const payload = {
-    id:S.f.id, pendampingId:S.f.pid, desa:d.desa, kelompok:d.kel, tanggal:d.tgl, jamMulai:d.mulai, jamSelesai:d.selesai,
+    id:S.f.id, pendampingId: isPLain() ? '' : S.f.pid,
+    pendampingLain: isPLain() ? { nama:$('iNamaP').value, nip:$('iNipP').value, kecamatan:$('iKecP').value } : null,
+    desa:d.desa, kelompok:d.kel, tanggal:d.tgl, jamMulai:d.mulai, jamSelesai:d.selesai,
     tempat:d.tempat, pemateri:$('iPemateri').value, jabatan:$('iJabatan').value, modul:d.modul, materi:d.materi,
     rangkuman:$('iRangkuman').value, lat:S.f.lat, lng:S.f.lng,
     absensi: lain ? [] : Object.keys(S.f.abs).map(k=>({kpmId:k, status:S.f.abs[k].status, keterangan:S.f.abs[k].keterangan||''})),
